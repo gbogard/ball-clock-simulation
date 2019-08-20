@@ -8,7 +8,7 @@ Every minute, the least recently used ball is removed from the queue of balls at
 
 - Guidelines -
 
-The exercise may be completed in the language of youre choice. 
+The exercise may be completed in the language of your choice. 
 
 No permutation or LCM algorithms are allowed.  A full simulation is required. Please ensure that your code moves each ball.
 

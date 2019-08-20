@@ -3,8 +3,22 @@ package application
 import domain._
 import monocle.Lens
 import monocle.macros.GenLens
+import domain.UserInput.RunForDuration
+import domain.UserInput.RunUntilCompleteCycle
 
 object StateMachine {
+
+  def handUserInput(userInput: UserInput): Either[DomainError, Output] =
+    userInput match {
+      case RunForDuration(balls, minutes) =>
+        getInitialState(balls)
+          .map(state => runForDuration(minutes, state))
+          .map(Output.ClockState)
+      case RunUntilCompleteCycle(balls) =>
+        getInitialState(balls)
+          .map(state => runUntilInitialOrdering(state))
+          .map(Output.NumberOfDays(balls, _))
+    }
 
   def getInitialState(numberOfBalls: Int): Either[DomainError, Clock] =
     if (27 <= numberOfBalls && numberOfBalls <= 127) {
@@ -84,9 +98,9 @@ object StateMachine {
   }
 
   /**
-   * Runs the clock for a specific duration and returns
-   * its last state
-   */
+    * Runs the clock for a specific duration and returns
+    * its last state
+    */
   def runForDuration(
       duration: Int,
       initialState: Clock
@@ -96,13 +110,14 @@ object StateMachine {
     })
 
   /**
-   * Returns the number of minutes until the clock gets back to
-   * its initial ordering
-   */
+    * Returns the number of minutes until the clock gets back to
+    * its initial ordering
+    */
   def runUntilInitialOrdering(initialState: Clock): Int = {
     def loop(state: Clock, tickCounter: Int): Int = {
-      if (state.bottomTrack == initialState.bottomTrack && tickCounter != 0) tickCounter
-      else if(tickCounter < 1000000) loop(tick(state), tickCounter + 1)
+      if (state.bottomTrack == initialState.bottomTrack && tickCounter != 0)
+        tickCounter
+      else if (tickCounter < 1000000) loop(tick(state), tickCounter + 1)
       else throw new RuntimeException("Possible infinite loop detected")
     }
 
