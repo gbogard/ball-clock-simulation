@@ -47,45 +47,38 @@ object StateMachine {
       (oneMinuteTrack composeLens ballsLens).modify(_ ++ leastRecentlyUsedBall)
 
     val handleFifthBallInOneMinuteTrack = (clock: Clock) => {
-      tiltTrackOptional(clock.oneMinute) match {
-        case Some((fiveMinuteBall, rest)) =>
-          ((oneMinuteTrack composeLens ballsLens).set(Nil)
-            andThen (bottomTrack composeLens ballsLens).modify(
-              rest.reverse ++ _
-            )
-            andThen (fiveMinutesTrack composeLens ballsLens).modify(
-              _ :+ fiveMinuteBall
-            ))(clock)
-        case None => clock
-      }
+      if (clock.oneMinute.balls.length > clock.oneMinute.maxCapacity) {
+        val (newOneMinuteTrack, newBottomTrack, newFiveMinutesTrack) =
+          handleTrackOverflow(clock.oneMinute, clock.bottomTrack, clock.fiveMinutes)
+        clock.copy(
+          oneMinute = newOneMinuteTrack,
+          fiveMinutes = newFiveMinutesTrack,
+          bottomTrack = newBottomTrack
+        )
+      } else clock
     }
 
     val handleTwelfthBallInFiveMinuteTrack = (clock: Clock) => {
-      tiltTrackOptional(clock.fiveMinutes) match {
-        case Some((oneHourBall, rest)) =>
-          ((fiveMinutesTrack composeLens ballsLens).set(Nil)
-            andThen (bottomTrack composeLens ballsLens).modify(
-              rest.reverse ++ _
-            )
-            andThen (oneHourTrack composeLens ballsLens).modify(
-              _ :+ oneHourBall
-            ))(clock)
-        case None => clock
-      }
+      if (clock.fiveMinutes.balls.length > clock.fiveMinutes.maxCapacity) {
+        val (newFiveMinutesTrack, newBottomTrack, newOneHourTrack) =
+          handleTrackOverflow(clock.fiveMinutes, clock.bottomTrack, clock.oneHour)
+        clock.copy(
+          fiveMinutes = newFiveMinutesTrack,
+          oneHour = newOneHourTrack,
+          bottomTrack = newBottomTrack
+        )
+      } else clock
     }
 
     val handleTwelfthBallInOneHourTrack = (clock: Clock) => {
-      tiltTrackOptional(clock.oneHour) match {
-        case Some((lastBall, rest)) =>
-          ((oneHourTrack composeLens ballsLens).set(Nil)
-            andThen (bottomTrack composeLens ballsLens).modify(
-              rest.reverse ++ _
-            )
-            andThen (bottomTrack composeLens ballsLens).modify(
-              _ :+ lastBall
-            ))(clock)
-        case None => clock
-      }
+      if (clock.oneHour.balls.length > clock.oneHour.maxCapacity) {
+        val (newOneHourTrack, _, newBottomTrack) =
+          handleTrackOverflow(clock.oneHour, clock.bottomTrack, clock.bottomTrack)
+        clock.copy(
+          oneHour = newOneHourTrack,
+          bottomTrack = newBottomTrack
+        )
+      } else clock
     }
 
     (
@@ -117,21 +110,49 @@ object StateMachine {
     def loop(state: Clock, tickCounter: Int): Int = {
       if (state.bottomTrack == initialState.bottomTrack && tickCounter != 0)
         tickCounter
-      else if (tickCounter < 1000000) loop(tick(state), tickCounter + 1)
+      else if (tickCounter < 100) loop(tick(state), tickCounter + 1)
       else throw new RuntimeException("Possible infinite loop detected")
     }
 
     loop(initialState, 0)
   }
 
-  /**
-    * Returns the ball that caused the tilt along with the balls that
-    * are rolling down from the track to the bottom track
-    */
-  private def tiltTrackOptional(track: Track): Option[(Ball, List[Ball])] =
-    if (track.balls.length > track.maxCapacity)
-      track.balls.lastOption.map((_, track.balls.dropRight(1)))
-    else None
+  private def sendLastBallToTrack(
+      inputTrack: Track,
+      targetTrack: Track
+  ): (Track, Track) = {
+    val lastBall = inputTrack.balls.lastOption
+    (
+      inputTrack.copy(balls = Nil),
+      ballsLens.modify(_ ++ lastBall)(targetTrack)
+    )
+  }
+
+  private def sendNLastBallsToTrack(
+      inputTrack: Track,
+      targetTrack: Track,
+      n: Int
+  ): (Track, Track) = {
+    (
+      ballsLens.modify(_.drop(n))(inputTrack),
+      ballsLens.modify(inputTrack.balls.take(n).reverse ++ _)(targetTrack)
+    )
+  }
+
+  private def handleTrackOverflow(
+      overflowedTrack: Track,
+      bottomTrack: Track,
+      destinationForLastBall: Track
+  ): (Track, Track, Track) = {
+    val (trackWithoutOverflow, newBottomTrack) = sendNLastBallsToTrack(
+      overflowedTrack,
+      bottomTrack,
+      overflowedTrack.balls.length - 1
+    )
+    val (emptyTrack, newDestinationTrack) =
+      sendLastBallToTrack(trackWithoutOverflow, destinationForLastBall)
+    (emptyTrack, newBottomTrack, newDestinationTrack)
+  }
 
   private val oneMinuteTrack: Lens[Clock, Track] = GenLens[Clock](_.oneMinute)
   private val fiveMinutesTrack: Lens[Clock, Track] =

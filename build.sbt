@@ -9,8 +9,6 @@ lazy val root = (project in file("."))
   .settings(
     name := "Ballclock",
     libraryDependencies ++= Seq(
-      cats,
-      catsEffect,
       scalaTest % Test
     ) ++ Monocle.all ++ Circe.all
   )
