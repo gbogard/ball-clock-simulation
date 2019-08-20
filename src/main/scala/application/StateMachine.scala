@@ -3,8 +3,23 @@ package application
 import domain._
 import monocle.Lens
 import monocle.macros.GenLens
+import domain.UserInput.RunForDuration
+import domain.UserInput.RunUntilCompleteCycle
 
 object StateMachine {
+
+  def handUserInput(userInput: UserInput): Either[DomainError, Output] =
+    userInput match {
+      case RunForDuration(balls, minutes) =>
+        getInitialState(balls)
+          .map(state => runForDuration(minutes, state))
+          .map(Output.ClockState)
+      case RunUntilCompleteCycle(balls) =>
+        getInitialState(balls)
+          .map(state => runUntilInitialOrdering(state))
+          .map(Utils.convertMinutesToDays)
+          .map(Output.NumberOfDays(balls, _))
+    }
 
   def getInitialState(numberOfBalls: Int): Either[DomainError, Clock] =
     if (27 <= numberOfBalls && numberOfBalls <= 127) {
@@ -22,61 +37,28 @@ object StateMachine {
     }
 
   def tick(currentState: Clock): Clock = {
-    val leastRecentlyUsedBall = currentState.bottomTrack.balls.lastOption
-
-    val takeLeastRecentlyUsedBallOut =
-      bottomTrack.modify(track => {
-        track.copy(balls = track.balls.dropRight(1))
-      })
-
-    val addBallToOneMinuteTrack =
-      (oneMinuteTrack composeLens ballsLens).modify(_ ++ leastRecentlyUsedBall)
+    val putBallInOneMinuteTrack = sendLeastRecentlyUsedBallToTrack(bottomTrack, oneMinuteTrack) _
 
     val handleFifthBallInOneMinuteTrack = (clock: Clock) => {
-      tiltTrackOptional(clock.oneMinute) match {
-        case Some((fiveMinuteBall, rest)) =>
-          ((oneMinuteTrack composeLens ballsLens).set(Nil)
-            andThen (bottomTrack composeLens ballsLens).modify(
-              rest.reverse ++ _
-            )
-            andThen (fiveMinutesTrack composeLens ballsLens).modify(
-              _ :+ fiveMinuteBall
-            ))(clock)
-        case None => clock
-      }
+      if (clock.oneMinute.balls.length > clock.oneMinute.maxCapacity) {
+        handleTrackOverflow(oneMinuteTrack, bottomTrack, fiveMinutesTrack)(clock)
+      } else clock
     }
 
     val handleTwelfthBallInFiveMinuteTrack = (clock: Clock) => {
-      tiltTrackOptional(clock.fiveMinutes) match {
-        case Some((oneHourBall, rest)) =>
-          ((fiveMinutesTrack composeLens ballsLens).set(Nil)
-            andThen (bottomTrack composeLens ballsLens).modify(
-              rest.reverse ++ _
-            )
-            andThen (oneHourTrack composeLens ballsLens).modify(
-              _ :+ oneHourBall
-            ))(clock)
-        case None => clock
-      }
+      if (clock.fiveMinutes.balls.length > clock.fiveMinutes.maxCapacity) {
+        handleTrackOverflow(fiveMinutesTrack, bottomTrack, oneHourTrack)(clock)
+      } else clock
     }
 
     val handleTwelfthBallInOneHourTrack = (clock: Clock) => {
-      tiltTrackOptional(clock.oneHour) match {
-        case Some((lastBall, rest)) =>
-          ((oneHourTrack composeLens ballsLens).set(Nil)
-            andThen (bottomTrack composeLens ballsLens).modify(
-              rest.reverse ++ _
-            )
-            andThen (bottomTrack composeLens ballsLens).modify(
-              _ :+ lastBall
-            ))(clock)
-        case None => clock
-      }
+      if (clock.oneHour.balls.length > clock.oneHour.maxCapacity) {
+        handleTrackOverflow(oneHourTrack, bottomTrack, bottomTrack)(clock)
+      } else clock
     }
 
     (
-      takeLeastRecentlyUsedBallOut
-        andThen addBallToOneMinuteTrack
+      putBallInOneMinuteTrack
         andThen handleFifthBallInOneMinuteTrack
         andThen handleTwelfthBallInFiveMinuteTrack
         andThen handleTwelfthBallInOneHourTrack
@@ -84,9 +66,9 @@ object StateMachine {
   }
 
   /**
-   * Runs the clock for a specific duration and returns
-   * its last state
-   */
+    * Runs the clock for a specific duration and returns
+    * its last state
+    */
   def runForDuration(
       duration: Int,
       initialState: Clock
@@ -96,27 +78,63 @@ object StateMachine {
     })
 
   /**
-   * Returns the number of minutes until the clock gets back to
-   * its initial ordering
-   */
+    * Returns the number of minutes until the clock gets back to
+    * its initial ordering
+    */
   def runUntilInitialOrdering(initialState: Clock): Int = {
     def loop(state: Clock, tickCounter: Int): Int = {
-      if (state.bottomTrack == initialState.bottomTrack && tickCounter != 0) tickCounter
-      else if(tickCounter < 1000000) loop(tick(state), tickCounter + 1)
+      if (state.bottomTrack == initialState.bottomTrack && tickCounter != 0)
+        tickCounter
+      else if (tickCounter < 10000000) loop(tick(state), tickCounter + 1)
       else throw new RuntimeException("Possible infinite loop detected")
     }
 
     loop(initialState, 0)
   }
 
-  /**
-    * Returns the ball that caused the tilt along with the balls that
-    * are rolling down from the track to the bottom track
-    */
-  private def tiltTrackOptional(track: Track): Option[(Ball, List[Ball])] =
-    if (track.balls.length > track.maxCapacity)
-      track.balls.lastOption.map((_, track.balls.dropRight(1)))
-    else None
+  private def sendLeastRecentlyUsedBallToTrack(
+      inputTrack: Lens[Clock, Track],
+      targetTrack: Lens[Clock, Track]
+  )(clock: Clock): Clock = {
+    val leastRecentlyUsedBall = inputTrack.get(clock).balls.headOption
+
+    val takeLeastRecentlyUsedBallOut =
+      (inputTrack composeLens ballsLens).modify(_.drop(1))
+
+    val addBallToTargetTrack =
+      (targetTrack composeLens ballsLens).modify(_ ++ leastRecentlyUsedBall)
+    (takeLeastRecentlyUsedBallOut andThen addBallToTargetTrack)(clock)
+  }
+
+  private def sendMostRecentlyUsedBallToTrack(
+      inputTrack: Lens[Clock, Track],
+      targetTrack: Lens[Clock, Track]
+  )(clock: Clock): Clock = {
+    val mostRecentlyUsedBall = inputTrack.get(clock).balls.lastOption
+    val takeMostRecentlyUsedBallOut =
+      (inputTrack composeLens ballsLens).modify(_.dropRight(1))
+    val addBallToTargetTrack =
+      (targetTrack composeLens ballsLens).modify(_ ++ mostRecentlyUsedBall)
+    (takeMostRecentlyUsedBallOut andThen addBallToTargetTrack)(clock)
+  }
+
+  private def handleTrackOverflow(
+      overFlowedTrack: Lens[Clock, Track],
+      bottomTrack: Lens[Clock, Track],
+      destinationForFrontBall: Lens[Clock, Track],
+      lastBallFirst: Boolean = true
+  ): Clock => Clock = {
+    ((clock: Clock) => {
+      val overFlowedTrackBalls = overFlowedTrack.get(clock).balls.dropRight(1)
+      ((overFlowedTrack composeLens ballsLens).modify(_.takeRight(1))
+        andThen (
+          (bottomTrack composeLens ballsLens).modify(_ ++ overFlowedTrackBalls.reverse)
+        ))(clock)
+    }) andThen (sendMostRecentlyUsedBallToTrack(
+      overFlowedTrack,
+      destinationForFrontBall
+    ) _) 
+  }
 
   private val oneMinuteTrack: Lens[Clock, Track] = GenLens[Clock](_.oneMinute)
   private val fiveMinutesTrack: Lens[Clock, Track] =
