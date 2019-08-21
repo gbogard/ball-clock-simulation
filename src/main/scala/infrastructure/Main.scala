@@ -36,7 +36,7 @@ object Main {
   |      Output for the sample input
   |      30 balls cycle after 15 days.
   |
-  | - <number of days> <minutes>
+  | - <number of balls> <minutes>
   |   If the number of minutes is supplied, the program will return the state of the clock after running for the
   |   supplied amount of minutes, in JSON format.
   |   
