@@ -52,8 +52,8 @@ class StateMachineSpec extends FunSpec with Matchers with EitherValues {
         )
 
         val expectedState = currentState.copy(
-          oneMinute = Track(List(1, 2, 5).map(Ball), 4),
-          bottomTrack = Track(List(3, 4).map(Ball), 27)
+          oneMinute = Track(List(1, 2, 3).map(Ball), 4),
+          bottomTrack = Track(List(4, 5).map(Ball), 27)
         )
 
         StateMachine.tick(currentState) shouldBe expectedState
@@ -64,15 +64,15 @@ class StateMachineSpec extends FunSpec with Matchers with EitherValues {
       ) {
         val currentState = Clock(
           oneMinute = Track(List(1, 2, 3, 4).map(Ball), 4),
-          fiveMinutes = Track(List(Ball(5)), 11),
+          fiveMinutes = Track(Nil, 11),
           oneHour = Track(Nil, 11),
-          bottomTrack = Track(List(6, 7, 8).map(Ball), 27)
+          bottomTrack = Track(List(5, 6, 7, 8).map(Ball), 27)
         )
 
         val expectedState = currentState.copy(
           oneMinute = Track(Nil, 4),
-          fiveMinutes = Track(List(5, 8).map(Ball), 11),
-          bottomTrack = Track(List(4, 3, 2, 1, 6, 7).map(Ball), 27)
+          fiveMinutes = Track(List(5).map(Ball), 11),
+          bottomTrack = Track(List(6, 7, 8, 4, 3, 2, 1).map(Ball), 27)
         )
 
         StateMachine.tick(currentState) shouldBe expectedState
@@ -82,18 +82,19 @@ class StateMachineSpec extends FunSpec with Matchers with EitherValues {
         "Should put the twelfth ball in the one hour track when the five minutes track is full"
       ) {
         val currentState = Clock(
-          oneMinute = Track(List(1, 2, 3, 4).map(Ball), 4),
-          fiveMinutes = Track(List(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15).map(Ball), 11),
+          oneMinute = Track(List(11, 12, 13, 14).map(Ball), 4),
+          fiveMinutes = Track(List(5, 10, 15, 20, 25, 2, 6, 19, 23, 27, 1).map(Ball), 11),
           oneHour = Track(Nil, 11),
-          bottomTrack = Track(List(16, 17, 18, 19, 20).map(Ball), 27)
+          bottomTrack = Track(List(24, 16, 17, 18, 4, 3, 21, 22, 9, 8, 7, 26).map(Ball), 27)
         )
 
         val expectedState = currentState.copy(
           oneMinute = Track(Nil, 4),
           fiveMinutes = Track(Nil, 11),
-          oneHour = Track(List(Ball(20)), 11),
+          oneHour = Track(List(Ball(24)), 11),
           bottomTrack = Track(
-            List(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 16, 17, 18, 19).map(Ball),
+            List(16, 17, 18, 4, 3, 21, 22, 9, 8, 7, 26, 14, 13, 12, 11, 1, 27, 23, 19, 6, 2, 25, 20,
+              15, 10, 5).map(Ball),
             27
           )
         )
@@ -179,13 +180,13 @@ class StateMachineSpec extends FunSpec with Matchers with EitherValues {
           .value shouldBe 15
       }
 
-      it("Should return 278 days when the clock has 30 balls") {
+      it("Should return 378 days when the clock has 45 balls") {
         StateMachine
           .getInitialState(45)
           .map(StateMachine.runUntilInitialOrdering)
           .map(Utils.convertMinutesToDays)
           .right
-          .value shouldBe 278
+          .value shouldBe 378
       }
     }
   }

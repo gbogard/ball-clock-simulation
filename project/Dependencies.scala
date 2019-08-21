@@ -2,6 +2,7 @@ import sbt._
 
 object Dependencies {
   val scalaTest = "org.scalatest" %% "scalatest" % "3.0.8"
+  val catsEffect = "org.typelevel" %% "cats-effect" % "1.3.1"  
 
   object Monocle {
     val version = "2.0.0-RC1"
