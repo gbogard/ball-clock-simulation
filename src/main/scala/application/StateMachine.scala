@@ -85,8 +85,7 @@ object StateMachine {
     def loop(state: Clock, tickCounter: Int): Int = {
       if (state.bottomTrack == initialState.bottomTrack && tickCounter != 0)
         tickCounter
-      else if (tickCounter < 10000000) loop(tick(state), tickCounter + 1)
-      else throw new RuntimeException("Possible infinite loop detected")
+      else loop(tick(state), tickCounter + 1)
     }
 
     loop(initialState, 0)
